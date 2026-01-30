@@ -1,0 +1,87 @@
+import re, json
+from collections import defaultdict
+
+TOPICS = [
+  "Leukemia","Lymphoma","Plasma_Cell_Disorders","Anemias",
+  "Platelets_and_Coagulation","Transfusion_and_Oncology_Emergencies","Misc"
+]
+
+def classify(q_text):
+    t = q_text.lower()
+    # leukemia
+    if any(k in t for k in ["aml","all","cml","cll","apl","auer","blast","bcr-abl","philadelphia","imatinib","leukostasis"]):
+        return "Leukemia"
+    # lymphoma
+    if any(k in t for k in ["hodgkin","non-hodgkin","dlbcl","follicular","mantle","burkitt","malt","reed","abvd","r-chop","cd15","cd30"]):
+        return "Lymphoma"
+    # plasma cell
+    if any(k in t for k in ["myeloma","mgus","waldenström","waldenstrom","amyloidosis","spep","light chain","hyperviscosity","lytic"]):
+        return "Plasma_Cell_Disorders"
+    # anemias
+    if any(k in t for k in ["anemia","anaemia","iron","ferritin","thalassemia","sickle","b12","folate","macrocytic","microcytic","g6pd","spherocytosis","aplastic","hemochromatosis"]):
+        return "Anemias"
+    # platelets & coag
+    if any(k in t for k in ["itp","ttp","hus","dic","hit","aps","aptt","pt ","inr","warfarin","dabigatran","andexanet","idarucizumab","hemophilia","von willebrand","mixing study","factor xiii"]):
+        return "Platelets_and_Coagulation"
+    # transfusion & onc emergencies
+    if any(k in t for k in ["trali","taco","transfusion","irradiat","leukoreduc","washed","febrile neutropenia","tls","tumor lysis","spinal cord","svc syndrome","hypercalcemia"]):
+        return "Transfusion_and_Oncology_Emergencies"
+    return "Misc"
+
+# 👇 غيّر اسم الملف هنا لو مختلف
+text = open("Hematology Board Q docx.txt","r",encoding="utf-8").read()
+
+# Split into questions by "Question N" or "Q###"
+blocks = re.split(r'\n(?=(?:Question\s+\d+|Q\d{1,3})\b)', text)
+
+seen = set()
+out = defaultdict(list)
+
+for b in blocks:
+    m = re.search(r'\b(?:Question\s+(\d+)|Q(\d{1,3}))\b', b)
+    if not m:
+        continue
+    qid = int(m.group(1) or m.group(2))
+
+    # Extract choices A-D
+    choices = {}
+    for opt in ["A","B","C","D"]:
+        mo = re.search(rf'\n{opt}\.\s*(.+)', b)
+        if mo:
+            choices[opt] = mo.group(1).strip()
+
+    # Determine correct answer ✔
+    correct = None
+    for opt in ["A","B","C","D"]:
+        if re.search(rf'\n{opt}\.\s*.+✔', b):
+            correct = opt
+            choices[opt] = re.sub(r'\s*✔\s*','',choices.get(opt,"")).strip()
+
+    # Question text
+    qtext_match = re.search(r'(?:Question\s+\d+|Q\d{1,3})\s*\n(.+?)\nA\.', b, re.S)
+    if not qtext_match:
+        continue
+    qtext = qtext_match.group(1).strip()
+
+    # Deduplicate
+    key = re.sub(r'\s+',' ', qtext.lower())
+    if key in seen:
+        continue
+    seen.add(key)
+
+    topic = classify(qtext)
+
+    out[topic].append({
+        "id": qid,
+        "topic": topic,
+        "question": qtext,
+        "choices": choices,
+        "correct_answer": correct,
+        "answer_text": choices.get(correct) if correct else None
+    })
+
+final = {t: out.get(t, []) for t in TOPICS}
+with open("hematology_oncology_topic_based.json","w",encoding="utf-8") as f:
+    json.dump(final,f,ensure_ascii=False,indent=2)
+
+print("Saved: hematology_oncology_topic_based.json")
